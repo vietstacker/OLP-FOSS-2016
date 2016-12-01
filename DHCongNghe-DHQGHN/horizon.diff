@@ -1,0 +1,508 @@
+diff --git a/openstack_dashboard/dashboards/container/__init__.py b/openstack_dashboard/dashboards/container/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/__init__.py b/openstack_dashboard/dashboards/container/autoscaling/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/forms.py b/openstack_dashboard/dashboards/container/autoscaling/forms.py
+new file mode 100644
+index 0000000..74a9ca8
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/forms.py
+@@ -0,0 +1,14 @@
++from django.utils.translation import ugettext_lazy as _
++
++from horizon import forms
++
++
++class AddRule(forms.SelfHandlingForm):
++    metric = forms.ChoiceField(choices=[(1, "CPU"), (2, "Memory")], label=_("Metric"), required=True)
++    upper_threshold = forms.IntegerField(min_value=0, max_value=100, label=_("Upper Threshold"), required=False)
++    lower_threshold = forms.IntegerField(min_value=0, max_value=100, label=_("Lower Threshold"), required=False)
++    node_up = forms.IntegerField(min_value=0, label=_("Number of node will be added when scale out"), required=False)
++    node_down = forms.IntegerField(min_value=0, label=_("Number of node will be deleted when scale in"), required=False)
++
++    def handle(self, request, data):
++        pass
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/panel.py b/openstack_dashboard/dashboards/container/autoscaling/panel.py
+new file mode 100644
+index 0000000..1e90308
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/panel.py
+@@ -0,0 +1,24 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++
++from django.utils.translation import ugettext_lazy as _
++
++import horizon
++from openstack_dashboard.dashboards.container import dashboard
++
++
++class Autoscaling(horizon.Panel):
++    name = _("Auto scaling")
++    slug = "autoscaling"
++
++
++dashboard.Container.register(Autoscaling)
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/tables.py b/openstack_dashboard/dashboards/container/autoscaling/tables.py
+new file mode 100644
+index 0000000..ea09cfc
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/tables.py
+@@ -0,0 +1,58 @@
++from django.core.urlresolvers import reverse
++from django.utils.translation import ugettext_lazy as _
++
++from horizon import tables
++
++
++class AddRuleAction(tables.LinkAction):
++    name = "add_rule"
++    verbose_name = _("Add Rule")
++    url = "horizon:container:autoscaling:add_rule"
++    classes = ("ajax-modal",)
++    icon = "plus"
++
++    # This action should be disabled if the instance
++    # is not active, or the instance is being deleted
++    def allowed(self, request, instance=None):
++        return True
++
++
++class DeleteRuleAction(tables.DeleteAction):
++    @staticmethod
++    def action_present(count):
++        return _(
++            u"Delete Rule",
++            u"Delete Rules",
++            count
++        )
++
++    @staticmethod
++    def action_past(count):
++        return _(
++            u"Deleted Rule",
++            u"Deleted Rules",
++            count
++        )
++
++    def allowed(self, request, security_group_rule=None):
++        return True
++
++    def delete(self, request, obj_id):
++        pass
++
++    def get_success_url(self, request):
++        return reverse("horizon:container:autoscaling:index")
++
++
++class InstancesTable(tables.DataTable):
++    metric = tables.Column('metric', verbose_name=_("Metric"))
++    upper_threshold = tables.Column('upper_threshold', verbose_name=_("Upper Threshold"))
++    lower_threshold = tables.Column('lower_threshold', verbose_name=_("Lower Threshold"))
++    node_up = tables.Column('node_up', verbose_name=_("Node up"))
++    node_down = tables.Column('node_down', verbose_name=_("Node down"))
++
++    class Meta:
++        name = "instances"
++        table_actions = (AddRuleAction, DeleteRuleAction,)
++        row_actions = (DeleteRuleAction,)
++        verbose_name = _("Scaling Rules")
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/tabs.py b/openstack_dashboard/dashboards/container/autoscaling/tabs.py
+new file mode 100644
+index 0000000..40e64d7
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/tabs.py
+@@ -0,0 +1,27 @@
++from django.utils.translation import ugettext_lazy as _
++
++from horizon import exceptions
++from horizon import tabs
++
++from openstack_dashboard import api
++from openstack_dashboard.dashboards.container.autoscaling import tables
++
++
++class InstanceTab(tabs.TableTab):
++    name = _("Instances Tab")
++    slug = "instances_tab"
++    table_classes = (tables.InstancesTable,)
++    template_name = ("horizon/common/_detail_table.html")
++    preload = False
++
++    def has_more_data(self, table):
++        return False
++
++    def get_instances_data(self):
++        return []
++
++
++class MypanelTabs(tabs.TabGroup):
++    slug = "mypanel_tabs"
++    tabs = (InstanceTab,)
++    sticky = True
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/_add_rule.html b/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/_add_rule.html
+new file mode 100644
+index 0000000..7ca2d5c
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/_add_rule.html
+@@ -0,0 +1,7 @@
++{% extends "horizon/common/_modal_form.html" %}
++{% load i18n %}
++
++{% block modal-body-right %}
++    <h3>{% trans "Description:" %}</h3>
++    <p>{% trans "Add new auto-scaling rule with specified parameter" %}</p>
++{% endblock %}
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/add_rule.html b/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/add_rule.html
+new file mode 100644
+index 0000000..f933903
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/add_rule.html
+@@ -0,0 +1,11 @@
++{% extends 'base.html' %}
++{% load i18n %}
++{% block title %}{% trans "Add Rule" %}{% endblock %}
++
++{% block page_header %}
++  {% include "horizon/common/_page_header.html" with title=_("Create a Snapshot") %}
++{% endblock page_header %}
++
++{% block main %}
++    {% include 'container/autoscaling/_add_rule.html' %}
++{% endblock %}
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/index.html b/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/index.html
+new file mode 100644
+index 0000000..1ed9d0a
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/index.html
+@@ -0,0 +1,89 @@
++{% extends 'base.html' %}
++{% load i18n horizon %}
++{% block title %}{% trans "Auto scaling" %}{% endblock %}
++
++{% block page_header %}
++  {% include "horizon/common/_page_header.html" with title=_("Autoscaling") %}
++{% endblock page_header %}
++
++{% block main %}
++
++<!-- Usage -->
++<div class="row">
++  <div>
++    <h2 class="col-sm-8">
++      Usage
++    </h2>
++  </div>
++</div>
++
++<div class="row">
++  <div class="col-sm-1">
++    <p>VM</p>
++  </div>
++  <div class="col-sm-4">
++    <select name="instances__filter" class="form-control">
++      <option value="project">swarm-olp</option>
++      <option value="host">swarm-olp2</option>
++      <option value="name">swarm-olp3</option>
++    </select>
++  </div>
++  <div class="col-sm-2">
++    <button type="button" class="btn btn-default">Filter</button>
++  </div>
++</div>
++
++<div class="panel panel-default" style="margin-top: 0.5em">
++  <div class="panel-body">
++    <div class="row">
++      <div class="col-sm-10">
++        <div id="line_chart"
++          data-chart-type="line_chart"
++          data-url="/container/sample"
++          data-legend-selector="#legend"
++          data-smoother-selector="#smoother"
++          data-slider-selector="#slider">
++        </div>
++        <div id="slider"></div>
++      </div>
++      <div class="col-sm-1 legend_container">
++        <div id="smoother" title="Smoothing"></div>
++        <div id="legend"></div>
++      </div>
++    </div>
++  </div>
++</div>
++
++<!--<div class="row">
++  <div class="col-sm-8">
++    <div id="line_chart"
++      data-chart-type="line_chart"
++      data-url="/container/sample"
++      data-legend-selector="#legend"
++      data-smoother-selector="#smoother"
++      data-slider-selector="#slider">
++    </div>
++    <div id="slider"></div>
++  </div>
++  <div class="col-sm-3 legend_container">
++    <div id="smoother" title="Smoothing"></div>
++    <div id="legend"></div>
++  </div>
++</div>-->
++
++<!-- Scaling rules -->
++<div class="row">
++  <div>
++    <h2 class="col-sm-8">
++      Scaling Rules
++    </h2>
++  </div>
++</div>
++<div class="row">
++  <div class="col-sm-12">
++    {{ tab_group.render }}
++  </div>
++</div>
++{% endblock %}
++
++
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/tests.py b/openstack_dashboard/dashboards/container/autoscaling/tests.py
+new file mode 100644
+index 0000000..19781d1
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/tests.py
+@@ -0,0 +1,19 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++
++from horizon.test import helpers as test
++
++
++class AutoscalingTests(test.TestCase):
++    # Unit tests for autoscaling.
++    def test_me(self):
++        self.assertTrue(1 + 1 == 2)
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/urls.py b/openstack_dashboard/dashboards/container/autoscaling/urls.py
+new file mode 100644
+index 0000000..1a6fd41
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/urls.py
+@@ -0,0 +1,24 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++
++from django.conf.urls import patterns
++from django.conf.urls import url
++
++from openstack_dashboard.dashboards.container.autoscaling import views
++
++
++urlpatterns = patterns(
++    '',
++    url(r'^/add_rule/$', views.AddRuleView.as_view(), name='add_rule'),
++    url(r'^$', views.IndexView.as_view(), name='index'),
++    url(r'^sample$', views.SamplesView.as_view(), name='sample')
++)
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/views.py b/openstack_dashboard/dashboards/container/autoscaling/views.py
+new file mode 100644
+index 0000000..550a369
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/views.py
+@@ -0,0 +1,91 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++
++from django.core.urlresolvers import reverse_lazy
++from django.utils.translation import ugettext_lazy as _
++
++import json
++import datetime
++import django
++import random
++from django.http import HttpResponse
++from horizon import tabs
++from horizon import forms
++
++from openstack_dashboard.dashboards.container.autoscaling import tabs as mydashboard_tabs
++
++from openstack_dashboard.dashboards.container.autoscaling import forms as mydashboard_forms
++
++
++class IndexView(tabs.TabbedTableView):
++    tab_group_class = mydashboard_tabs.MypanelTabs
++    template_name = 'container/autoscaling/index.html'
++
++    def get_data(self, request, context, *args, **kwargs):
++        # Add data to the context here...
++        return context
++
++
++class AddRuleView(forms.ModalFormView):
++    form_class = mydashboard_forms.AddRule
++    template_name = 'container/autoscaling/add_rule.html'
++    success_url = reverse_lazy("horizon:container:autoscaling:index")
++    modal_id = "add_rule_modal"
++    modal_header = _("Add Rule")
++    submit_label = _("Add Rule")
++    submit_url = "horizon:container:autoscaling:add_rule"
++
++    def get_context_data(self, **kwargs):
++        context = super(AddRuleView, self).get_context_data(**kwargs)
++        return context
++
++
++class SamplesView(django.views.generic.TemplateView):
++
++    def get(self, request, *args, **kwargs):
++        scale = 10
++        start = datetime.datetime(2016, 1, 1, 20, 20, 1)
++        timeseries = [
++            (start + datetime.timedelta(0, x * scale)).strftime("%Y-%m-%dT%H:%M:%S%Z")
++            for x in xrange(0, 15 * 60 / scale)
++        ]
++
++        cpu = []
++        mem = []
++        for t in timeseries:
++            cpu.append({"y": random.randint(20, 50), "x": t})
++            mem.append({"y": random.randint(20, 50), "x": t})
++
++        ret = {
++            "series": [
++                {
++                    "name": "CPU",
++                    "data": cpu
++                },
++                {
++                    "name": "Memory",
++                    "data": mem
++                }
++            ],
++            "settings": {
++                'renderer': 'StaticAxes',
++                'yMin': 0,
++                'yMax': 100,
++                'higlight_last_point': False,
++                "auto_size": True,
++                'auto_resize': True,
++                "axes_x": False,
++                "axes_y": True,
++                "axes_y_label": "%"
++            }
++        }
++        return HttpResponse(json.dumps(ret), content_type='application/json')
+diff --git a/openstack_dashboard/dashboards/container/dashboard.py b/openstack_dashboard/dashboards/container/dashboard.py
+new file mode 100644
+index 0000000..d612f2b
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/dashboard.py
+@@ -0,0 +1,25 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++
++from django.utils.translation import ugettext_lazy as _
++
++import horizon
++
++
++class Container(horizon.Dashboard):
++    name = _("Container")
++    slug = "container"
++    panels = ('autoscaling',)  # Add your panels here.
++    default_panel = 'autoscaling'  # Specify the slug of the dashboard's default panel.
++
++
++horizon.register(Container)
+diff --git a/openstack_dashboard/dashboards/container/static/container/js/container.js b/openstack_dashboard/dashboards/container/static/container/js/container.js
+new file mode 100644
+index 0000000..b6b70ad
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/static/container/js/container.js
+@@ -0,0 +1 @@
++/* Additional JavaScript for container. */
+diff --git a/openstack_dashboard/dashboards/container/static/container/scss/container.scss b/openstack_dashboard/dashboards/container/static/container/scss/container.scss
+new file mode 100644
+index 0000000..431771b
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/static/container/scss/container.scss
+@@ -0,0 +1 @@
++/* Additional SCSS for {{ dash_name }}. */
+diff --git a/openstack_dashboard/dashboards/container/templates/container/base.html b/openstack_dashboard/dashboards/container/templates/container/base.html
+new file mode 100644
+index 0000000..80677b2
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/templates/container/base.html
+@@ -0,0 +1,11 @@
++{% extends 'base.html' %}
++
++{% block sidebar %}
++  {% include 'horizon/common/_sidebar.html' %}
++{% endblock %}
++
++{% block main %}
++    {% include "horizon/_messages.html" %}
++    {% block container_main %}{% endblock %}
++{% endblock %}
++
+diff --git a/openstack_dashboard/enabled/_50_container.py b/openstack_dashboard/enabled/_50_container.py
+new file mode 100644
+index 0000000..884d882
+--- /dev/null
++++ b/openstack_dashboard/enabled/_50_container.py
+@@ -0,0 +1,10 @@
++# The name of the dashboard to be added to HORIZON['dashboards']. Required.
++DASHBOARD = 'container'
++
++# If set to True, this dashboard will not be added to the settings.
++DISABLED = False
++
++# A list of applications to be added to INSTALLED_APPS.
++ADD_INSTALLED_APPS = [
++    'openstack_dashboard.dashboards.container',
++]
