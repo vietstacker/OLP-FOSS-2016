@@ -1,0 +1,462 @@
+From de52ee753eceb4429c6156d2c91bb7d83e888569 Mon Sep 17 00:00:00 2001
+From: Dang Nhat <nhat.chau10295@gmail.com>
+Date: Thu, 1 Dec 2016 14:06:16 +0700
+Subject: [PATCH] container
+
+---
+ .../dashboards/container/__init__.py               |   0
+ .../dashboards/container/autoscaling/__init__.py   |   0
+ .../dashboards/container/autoscaling/data.tsv      |  11 ++
+ .../dashboards/container/autoscaling/panel.py      |  23 ++++
+ .../autoscaling/templates/autoscaling/index.html   | 127 +++++++++++++++++++++
+ .../dashboards/container/autoscaling/tests.py      |  19 +++
+ .../dashboards/container/autoscaling/urls.py       |  20 ++++
+ .../dashboards/container/autoscaling/views.py      |  23 ++++
+ .../dashboards/container/dashboard.py              |  25 ++++
+ openstack_dashboard/dashboards/container/data.tsv  |  11 ++
+ .../container/static/container/js/container.js     |  70 ++++++++++++
+ .../container/static/container/scss/container.scss |  10 ++
+ .../container/templates/container/base.html        |  11 ++
+ 13 files changed, 350 insertions(+)
+ create mode 100644 openstack_dashboard/dashboards/container/__init__.py
+ create mode 100644 openstack_dashboard/dashboards/container/autoscaling/__init__.py
+ create mode 100644 openstack_dashboard/dashboards/container/autoscaling/data.tsv
+ create mode 100644 openstack_dashboard/dashboards/container/autoscaling/panel.py
+ create mode 100644 openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/index.html
+ create mode 100644 openstack_dashboard/dashboards/container/autoscaling/tests.py
+ create mode 100644 openstack_dashboard/dashboards/container/autoscaling/urls.py
+ create mode 100644 openstack_dashboard/dashboards/container/autoscaling/views.py
+ create mode 100644 openstack_dashboard/dashboards/container/dashboard.py
+ create mode 100644 openstack_dashboard/dashboards/container/data.tsv
+ create mode 100644 openstack_dashboard/dashboards/container/static/container/js/container.js
+ create mode 100644 openstack_dashboard/dashboards/container/static/container/scss/container.scss
+ create mode 100644 openstack_dashboard/dashboards/container/templates/container/base.html
+
+diff --git a/openstack_dashboard/dashboards/container/__init__.py b/openstack_dashboard/dashboards/container/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/__init__.py b/openstack_dashboard/dashboards/container/autoscaling/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/data.tsv b/openstack_dashboard/dashboards/container/autoscaling/data.tsv
+new file mode 100644
+index 0000000..c1aa714
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/data.tsv
+@@ -0,0 +1,11 @@
++x	y
++0	0.5
++0.1111111111111111	0.9546487134128409
++0.2222222222222222	0.1215987523460359
++0.3333333333333333	0.36029225090053707
++0.4444444444444444	0.994679123311691
++0.5555555555555556	0.2279894445553151
++0.6666666666666666	0.23171354099978253
++0.7777777777777778	0.9953036778474351
++0.8888888888888888	0.35604834166746735
++1	0.12450637661416192 
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/panel.py b/openstack_dashboard/dashboards/container/autoscaling/panel.py
+new file mode 100644
+index 0000000..05cfbce
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/panel.py
+@@ -0,0 +1,23 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++
++from django.utils.translation import ugettext_lazy as _
++
++import horizon
++from openstack_dashboard.dashboards.container import dashboard
++
++class Autoscaling(horizon.Panel):
++    name = _("Auto scaling")
++    slug = "autoscaling"
++
++
++dashboard.Container.register(Autoscaling)
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/index.html b/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/index.html
+new file mode 100644
+index 0000000..61049ac
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/index.html
+@@ -0,0 +1,127 @@
++{% extends 'base.html' %}
++{% load i18n %}
++{% block title %}{% trans "Autoscaling" %}{% endblock %}
++
++{% block page_header %}
++  {% include "horizon/common/_page_header.html" with title=_("Autoscaling") %}
++{% endblock page_header %}
++
++{% block main %}
++<h3>Usage</h3>
++    <div class="form-inline">
++        <div class="form-group">
++          <label for="vm">VM</label>
++        <select class="form-control ">
++             <option value="olp-swarm">olp-swarm</option>  
++        </select>
++        <form method="GET" class="inline">
++          <input type="submit" name="filter" class="btn btn-default" value="Filter">
++        </form>
++        </div>
++    </div>
++
++<div class="col-lg-12">
++  <div class="col-lg-8" id="chart">
++
++     
++  </div>
++  <div class="col-lg-4">
++      <div class="col-lg-12">
++          <div class="form-inline">
++            <input type="checkbox" aria-label="...">
++            <label for="">CPU</label>
++           <div class="banner-cpu"></div>
++          </div>
++           <div class="form-inline">
++            <input type="checkbox" aria-label="...">
++            <label for="">Memory</label>
++            <div class="banner-mem"></div>
++          </div>
++      </div>
++  </div>
++</div>
++<div class="col-lg-12 inline">
++  <h3>Scaling rules</h3>
++  <form method="POST" class="form-inline" style="float:right;">
++    <input type="submit" value="Add rule" class="btn btn-default" data-toggle="modal" data-target="#myModal">
++    <input type="submit" value="Delete rule" class="btn btn-danger">
++  </form>
++</div>
++<div class="col-lg-12">
++  <table class="table">
++     <thead> 
++<tr> 
++    <th></th> 
++    <th>Metric</th> 
++    <th>Upper threshold</th> 
++    <th>Lower threshold</th> 
++    <th>Node up</th>
++    <th>Note down</th> 
++</tr> 
++</thead> 
++<tbody> 
++<tr> 
++    <td><input type="checkbox"></td> 
++    <td>CPU</td> 
++    <td>90</td> 
++    <td>30</td> 
++    <td>2</td>
++    <td>1</td> 
++</tr> 
++<tr> 
++    <td><input type="checkbox"></td> 
++    <td>Memory</td> 
++    <td>60</td> 
++    <td>40</td> 
++    <td>2</td>
++    <td>1</td> 
++</tr> 
++</tbody> 
++  </table>
++</div>
++
++<div class="modal fade" id="myModal" tabindex="-1" role="dialog" aria-labelledby="myModalLabel">
++  <div class="modal-dialog" role="document">
++    <form class="modal-content" method="POST">
++      <div class="modal-header">
++        <button type="button" class="close" data-dismiss="modal" aria-label="Close"><span aria-hidden="true">&times;</span></button>
++        <h4 class="modal-title" id="myModalLabel">Add new auto-scaling rule</h4>
++      </div>
++      <div class="modal-body col-lg-12">
++          <div class="col-lg-6">
++              <div class="form-group">
++                <label for="metric">Metric</label>
++                <input type="text" class="form-control" id="metric" >
++              </div>
++              <div class="form-group">
++                <label for="upperthreshold">Upper threshold</label>
++                <input type="text" class="form-control" id="upperthreshold" >
++              </div>
++              <div class="form-group">
++                <label for="lowerthreshold">Lower threshold</label>
++                <input type="text" id="lowerthreshold" class="form-control">
++              </div>
++              <div class="form-group">
++                <label for="addnode">Number of node will add when scale out</label>
++                <input type="text" class="form-control" id="addnode">
++              </div>
++              <div class="form-group">
++                <label for="rmnode">Number of node will delete when scale in</label>
++                <input type="text" class="form-control" id="rmnode">
++              </div>
++          </div>
++          <div class="col-lg-6">
++              <h2>Description:</h2>
++              <p>Add new rule.</p>
++          </div>
++      </div>
++      <div class="modal-footer">
++        <button type="button" class="btn btn-default" data-dismiss="modal">Close</button>
++        <button type="submit" class="btn btn-primary">Add</button>
++      </div>
++    </form>
++  </div>
++</div>
++{% endblock %}
++
++
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/tests.py b/openstack_dashboard/dashboards/container/autoscaling/tests.py
+new file mode 100644
+index 0000000..19781d1
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/tests.py
+@@ -0,0 +1,19 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++
++from horizon.test import helpers as test
++
++
++class AutoscalingTests(test.TestCase):
++    # Unit tests for autoscaling.
++    def test_me(self):
++        self.assertTrue(1 + 1 == 2)
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/urls.py b/openstack_dashboard/dashboards/container/autoscaling/urls.py
+new file mode 100644
+index 0000000..4b05a12
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/urls.py
+@@ -0,0 +1,20 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++
++from django.conf.urls import url
++
++from openstack_dashboard.dashboards.container.autoscaling import views
++
++
++urlpatterns = [
++    url(r'^$', views.IndexView.as_view(), name='index'),
++]
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/views.py b/openstack_dashboard/dashboards/container/autoscaling/views.py
+new file mode 100644
+index 0000000..9736255
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/views.py
+@@ -0,0 +1,23 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++
++from horizon import views
++
++
++class IndexView(views.APIView):
++    # A very simple class-based view...
++    template_name = 'container/autoscaling/index.html'
++
++    def get_data(self, request, context, *args, **kwargs):
++        # Add data to the context here...
++        
++        return context
+diff --git a/openstack_dashboard/dashboards/container/dashboard.py b/openstack_dashboard/dashboards/container/dashboard.py
+new file mode 100644
+index 0000000..da34e35
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/dashboard.py
+@@ -0,0 +1,25 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++
++from django.utils.translation import ugettext_lazy as _
++
++import horizon
++
++
++class Container(horizon.Dashboard):
++    name = _("Container")
++    slug = "container"
++    panels = ('autoscaling',)  # Add your panels here.
++    default_panel = 'autoscaling'  # Specify the slug of the dashboard's default panel.
++    
++
++horizon.register(Container)
+diff --git a/openstack_dashboard/dashboards/container/data.tsv b/openstack_dashboard/dashboards/container/data.tsv
+new file mode 100644
+index 0000000..4d4340b
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/data.tsv
+@@ -0,0 +1,11 @@
++x	y
++0	0.5
++0.1111111111111111	0.9546487134128409
++0.2222222222222222	0.1215987523460359
++0.3333333333333333	0.36029225090053707
++0.4444444444444444	0.994679123311691
++0.5555555555555556	0.2279894445553151
++0.6666666666666666	0.23171354099978253
++0.7777777777777778	0.9953036778474351
++0.8888888888888888	0.35604834166746735
++1	0.12450637661416192
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/container/static/container/js/container.js b/openstack_dashboard/dashboards/container/static/container/js/container.js
+new file mode 100644
+index 0000000..7df9fe4
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/static/container/js/container.js
+@@ -0,0 +1,70 @@
++/* Additiona */
++var margin = {top: 40, right: 40, bottom: 40, left: 40},
++    width = 960 - margin.left - margin.right,
++    height = 500 - margin.top - margin.bottom;
++
++var x = d3.scale.linear()
++    .domain([0, 1])
++    .range([0, width]);
++
++var y = d3.scale.linear()
++    .domain([0, 1])
++    .range([height, 0]);
++
++var z = d3.scale.linear()
++    .domain([2 / 3, 1]) // D3 3.x tension is buggy!
++    .range(["brown", "steelblue"]);
++
++var xAxis = d3.svg.axis()
++    .scale(x)
++    .orient("bottom");
++
++var yAxis = d3.svg.axis()
++    .scale(y)
++    .orient("left");
++
++var line = d3.svg.line()
++    .interpolate("cardinal")
++    .x(function(d) { return x(d.x); })
++    .y(function(d) { return y(d.y); });
++
++var svg = d3.select("#chat").append("svg")
++    .attr("width", width + margin.left + margin.right)
++    .attr("height", height + margin.top + margin.bottom)
++  .append("g")
++    .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
++
++d3.tsv("data.tsv", type, function(error, data) {
++  if (error) throw error;
++
++  svg.append("g")
++      .attr("class", "axis axis--x")
++      .attr("transform", "translate(0," + height + ")")
++      .call(xAxis);
++
++  svg.append("g")
++      .attr("class", "axis axis--y")
++      .call(yAxis);
++
++  svg.selectAll(".line")
++      .data(z.ticks(6))
++    .enter().append("path")
++      .attr("class", "line")
++      .attr("d", function(d) { return line.tension(d)(data); })
++      .style("stroke", z);
++
++  svg.selectAll(".dot")
++      .data(data)
++    .enter().append("circle")
++      .attr("class", "dot")
++      .attr("cx", function(d) { return x(d.x); })
++      .attr("cy", function(d) { return y(d.y); })
++      .attr("r", 3.5);
++});
++
++function type(d) {
++  d.x = +d.x;
++  d.y = +d.y;
++  return d;
++}
++
+diff --git a/openstack_dashboard/dashboards/container/static/container/scss/container.scss b/openstack_dashboard/dashboards/container/static/container/scss/container.scss
+new file mode 100644
+index 0000000..acb38ee
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/static/container/scss/container.scss
+@@ -0,0 +1,10 @@
++/* Additional SCSS for {{ dash_name }}. */
++.banner-cpu{
++    background-color: red;min-height: 10px; min-width: 10px; display: inline-block;
++}
++.banner-mem{
++    background-color: yellow;min-height: 10px; min-width: 10px; display: inline-block;
++}
++.inline{
++    display: inline-block !important;
++}
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/container/templates/container/base.html b/openstack_dashboard/dashboards/container/templates/container/base.html
+new file mode 100644
+index 0000000..80677b2
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/templates/container/base.html
+@@ -0,0 +1,11 @@
++{% extends 'base.html' %}
++
++{% block sidebar %}
++  {% include 'horizon/common/_sidebar.html' %}
++{% endblock %}
++
++{% block main %}
++    {% include "horizon/_messages.html" %}
++    {% block container_main %}{% endblock %}
++{% endblock %}
++
+-- 
+1.9.1
+

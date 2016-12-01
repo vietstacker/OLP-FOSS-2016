@@ -1,0 +1,25 @@
+From 55283832e9b726b6efa86b011238d0c9277d9f7d Mon Sep 17 00:00:00 2001
+From: skordesign <skordesign@outlook.com>
+Date: Thu, 1 Dec 2016 14:17:55 +0700
+Subject: [PATCH] _scripts.html
+
+---
+ openstack_dashboard/templates/horizon/_scripts.html | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/openstack_dashboard/templates/horizon/_scripts.html b/openstack_dashboard/templates/horizon/_scripts.html
+index 2274ffb..3c63aab 100644
+--- a/openstack_dashboard/templates/horizon/_scripts.html
++++ b/openstack_dashboard/templates/horizon/_scripts.html
+@@ -55,7 +55,7 @@
+ <script src='{{ STATIC_URL }}horizon/js/horizon.firewalls.js'></script>
+ <script src='{{ STATIC_URL }}horizon/js/horizon.volumes.js'></script>
+ <script src='{{ STATIC_URL }}horizon/lib/jsencrypt/jsencrypt.js'></script>
+-
++<script src='{{ STATIC_URL }}horizon/lib/container/container.js'></script>
+ {% for file in HORIZON_CONFIG.js_files %}
+     <script src='{{ STATIC_URL }}{{ file }}'></script>
+ {% endfor %}
+-- 
+2.10.2
+

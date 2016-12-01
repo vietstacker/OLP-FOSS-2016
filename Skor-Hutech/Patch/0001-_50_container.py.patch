@@ -1,0 +1,47 @@
+From 38cdf44717128107379f47e3f4a40f50d342fa9d Mon Sep 17 00:00:00 2001
+From: skordesign <skordesign@outlook.com>
+Date: Thu, 1 Dec 2016 13:52:06 +0700
+Subject: [PATCH] fuck
+
+---
+ 0001-dai-hoc-hutech.patch | 28 ++++++++++++++++++++++++++++
+ 1 file changed, 28 insertions(+)
+ create mode 100644 0001-dai-hoc-hutech.patch
+
+diff --git a/0001-dai-hoc-hutech.patch b/0001-dai-hoc-hutech.patch
+new file mode 100644
+index 0000000..3b3c4ff
+--- /dev/null
++++ b/0001-dai-hoc-hutech.patch
+@@ -0,0 +1,28 @@
++From a44ee78b3a8054352cc46fba7c866e1d495e2904 Mon Sep 17 00:00:00 2001
++From: skordesign <skordesign@outlook.com>
++Date: Thu, 1 Dec 2016 13:49:12 +0700
++Subject: [PATCH] dai hoc hutech
++
++---
++ openstack_dashboard/enabled/_50_container.py | 9 +++++++++
++ 1 file changed, 9 insertions(+)
++ create mode 100644 openstack_dashboard/enabled/_50_container.py
++
++diff --git a/openstack_dashboard/enabled/_50_container.py b/openstack_dashboard/enabled/_50_container.py
++new file mode 100644
++index 0000000..6695bee
++--- /dev/null
+++++ b/openstack_dashboard/enabled/_50_container.py
++@@ -0,0 +1,9 @@
+++DASHBOARD = 'container'
+++
+++# If set to True, this dashboard will not be added to the settings.
+++DISABLED = False
+++
+++# A list of applications to be added to INSTALLED_APPS.
+++ADD_INSTALLED_APPS = [
+++    'openstack_dashboard.dashboards.container',
+++]
++-- 
++2.10.2
++
+-- 
+2.10.2
+
