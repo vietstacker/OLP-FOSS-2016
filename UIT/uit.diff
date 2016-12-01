@@ -1,0 +1,703 @@
+diff --git a/openstack_dashboard/dashboards/docker/.gitignore b/openstack_dashboard/dashboards/docker/.gitignore
+new file mode 100644
+index 0000000..0d20b64
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/.gitignore
+@@ -0,0 +1 @@
++*.pyc
+diff --git a/openstack_dashboard/dashboards/docker/__init__.py b/openstack_dashboard/dashboards/docker/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/openstack_dashboard/dashboards/docker/autoscaling/__init__.py b/openstack_dashboard/dashboards/docker/autoscaling/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/openstack_dashboard/dashboards/docker/autoscaling/api.py b/openstack_dashboard/dashboards/docker/autoscaling/api.py
+new file mode 100644
+index 0000000..cea5c0e
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/autoscaling/api.py
+@@ -0,0 +1,140 @@
++import inspect
++import functools
++import six
++
++from docker import client
++from docker import tls
++
++DEFAULT_TIMEOUT_SECONDS = 120
++DEFAULT_DOCKER_API_VERSION = '1.19'
++
++def filter_data(f):
++    """Decorator that post-processes data returned by Docker.
++     This will avoid any surprises with different versions of Docker.
++    """
++    @functools.wraps(f, assigned=[])
++    def wrapper(*args, **kwds):
++        out = f(*args, **kwds)
++
++        def _filter(obj):
++            if isinstance(obj, list):
++                new_list = []
++                for o in obj:
++                    new_list.append(_filter(o))
++                obj = new_list
++            if isinstance(obj, dict):
++                for k, v in obj.items():
++                    if isinstance(k, six.string_types):
++                        obj[k.lower()] = _filter(v)
++            return obj
++        return _filter(out)
++    return wrapper
++
++class DockerHTTPClient(client.Client):
++    def __init__(self, url='unix://var/run/docker.sock'):
++        ssl_config = False
++        client_cert = None
++        
++        super(DockerHTTPClient, self).__init__(
++            base_url=url,
++            version=DEFAULT_DOCKER_API_VERSION,
++            timeout=DEFAULT_TIMEOUT_SECONDS,
++            tls=ssl_config
++        )
++        self._setup_decorators()
++
++    def _setup_decorators(self):
++        for name, member in inspect.getmembers(self, inspect.ismethod):
++            if not name.startswith('_'):
++                setattr(self, name, filter_data(member))
++
++    def pause(self, container_id):
++        url = self._url("/containers/{0}/pause".format(container_id))
++        res = self._post(url)
++        return res.status_code == 204
++
++    def unpause(self, container_id):
++        url = self._url("/containers/{0}/unpause".format(container_id))
++        res = self._post(url)
++        return res.status_code == 204
++
++    def load_repository_file(self, name, path):
++        with open(path, 'rb') as fh:
++            self.load_image(fh)
++
++    def get_container_logs(self, container_id):
++        return self.attach(container_id, 1, 1, 0, 1)
++
++class Containers:
++    def __init__(self, container_id, image, status, startedat, ip, port):
++        self.id = container_id
++        self.container_id = container_id
++        self.image = image
++        self.status = status
++        self.startedat = startedat
++        self.ip = ip
++        self.port = port
++
++class DockerDriver:
++    def __init__(self):
++        self._docker = None
++        
++    @property
++    def docker(self):
++        if self._docker is None:
++            self._docker = DockerHTTPClient()
++        return self._docker
++
++    def init_host(self, host):
++        if self._is_daemon_running() is False:
++            raise exception.NovaException(
++                _('Docker daemon is not running or is not reachable'
++                  ' (check the rights on /var/run/docker.sock)'))
++
++    def _is_daemon_running(self):
++        return self.docker.ping()
++
++    def list_instances(self, inspect=False):
++        res = []
++        for container in self.docker.containers(all=True):
++            info = self.docker.inspect_container(container['id'])
++            if not info:
++                continue
++            if inspect:
++                res.append(info)
++            else:
++                res.append(info['Config'].get('Hostname'))
++        return res
++
++    def get_container(self, container_id):
++    	self.docker.containers.get(container_id)
++
++    def list_instances_table(self):
++        res = []
++        for container in self.docker.containers(all=True):
++            info = self.docker.inspect_container(container['id'])
++            if not info:
++                continue
++            
++            container_row = Containers(
++                container_id=info['Config'].get('Hostname'),
++                image=info['Config'].get('image'),
++                status=info['State'].get('status'),
++                startedat=info['State'].get('startedat'),
++                ip=info['networksettings'].get('ipaddress'),
++                port=info['networksettings'].get('ports'))
++
++            res.append(container_row)
++        return res
++
++    def container_create(self, docker_name):
++        return self.docker.containers.start(docker_name, detach=True)
++
++    def container_log(self, container_id):
++        # try:
++        print 'docker::api -> Get log of %s' % container_id
++        logs = self.docker.logs(container=container_id, stream=False)
++        print '--------------- logs'
++        return logs
++        # except:
++        #     return ''
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/docker/autoscaling/forms.py b/openstack_dashboard/dashboards/docker/autoscaling/forms.py
+new file mode 100644
+index 0000000..2d511df
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/autoscaling/forms.py
+@@ -0,0 +1,30 @@
++from django.core.urlresolvers import reverse
++from django.utils.translation import ugettext_lazy as _
++
++from horizon import exceptions
++from horizon import forms
++
++from openstack_dashboard import api
++
++class AddRuleForm(forms.SelfHandlingForm):
++    metric_name = forms.ChoiceField(choices=[('CPU', _('CPU')), ('MEM', _('Mem'))],
++            label=_("Metric"),
++            required=True)
++
++    upper_threshold = forms.IntegerField(max_value=100, min_value=50, label=_("Upper threshold"), required = True)
++    lower_threshold = forms.IntegerField(max_value=50, min_value=0, label=_("Lower threshold"), required = True)
++    node_up = forms.IntegerField(max_value=10, min_value=0, label=_("Node up"), required = True)
++    node_down = forms.IntegerField(max_value=10, min_value=0, label=_("Node down"), required = True)
++    
++    def handle(self, request, data):
++        try:
++            # Create ceilometer event trigger 
++            scaling_up = 'autoscaling_up_' + str(metric_name)
++            scaling_down = 'autoscaling_down_' + str(metric_name)
++            api.ceilometer.alarm_create(request, name=scaling_up, threshold=upper_threshold)
++            api.ceilometer.alarm_create(request, name=scaling_down, threshold=lower_threshold)
++
++            return True
++        except Exception:
++            # pass
++            return True
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/docker/autoscaling/models.py b/openstack_dashboard/dashboards/docker/autoscaling/models.py
+new file mode 100644
+index 0000000..3000241
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/autoscaling/models.py
+@@ -0,0 +1,8 @@
++class ScalingRuleItem:
++    def __init__(self, metric, upper_threshold, lower_threshold, node_up, node_down):
++        self.id = metric
++        self.metric = metric
++        self.upper_threshold = upper_threshold
++        self.lower_threshold = lower_threshold
++        self.node_up = node_up
++        self.node_down = node_down
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/docker/autoscaling/panel.py b/openstack_dashboard/dashboards/docker/autoscaling/panel.py
+new file mode 100644
+index 0000000..0c22e5a
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/autoscaling/panel.py
+@@ -0,0 +1,11 @@
++from django.utils.translation import ugettext_lazy as _
++import horizon
++from openstack_dashboard.dashboards.docker import dashboard
++
++
++class AutoScalingPanel(horizon.Panel):
++    name = _("Auto Scaling")
++    slug = "autoscaling"
++
++
++dashboard.ContainerDashboard.register(AutoScalingPanel)
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/docker/autoscaling/tables.py b/openstack_dashboard/dashboards/docker/autoscaling/tables.py
+new file mode 100644
+index 0000000..9ee2866
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/autoscaling/tables.py
+@@ -0,0 +1,56 @@
++from django.utils.translation import ugettext_lazy as _
++
++from horizon import tables
++from openstack_dashboard import policy
++
++class RuleFilterAction(tables.FilterAction):
++    name = "rulefilter"
++
++class StopContainerAction(tables.LinkAction):
++    name = "stop_container"
++    verbose_name = _("Stop")
++    url = "horizon:docker:autoscaling:stop_container"
++    classes = ("ajax-modal", "btn",)
++
++    def allowed(self, request, instance=None):
++        return instance.status in ("running")
++
++class AddRuleAction(tables.LinkAction):
++    name = "add_rule"
++    verbose_name = _("Add rule")
++    url = "horizon:container:autoscaling:add_rule"
++    classes = ("ajax-modal", "btn",)
++
++    def allowed(self, request, instance=None):
++        return True
++
++class DeleteRuleAction(tables.LinkAction):
++    name = "delete_rule"
++    verbose_name = _("Delete rule")
++    url = "horizon:container:autoscaling:delete_rule"
++    classes = ("ajax-modal", "btn",)
++
++    def allowed(self, request, instance=None):
++        return True
++
++class RemoveContainerAction(tables.LinkAction):
++    name = "remove_container"
++    verbose_name = _("Delete")
++    url = "horizon:docker:autoscaling:delete_container"
++    classes = ("ajax-modal", "btn",)
++
++    def allowed(self, request, instance=None):
++        return instance.status in ("exited", "running")
++
++class ScalingRuleTable(tables.DataTable):
++    metric = tables.Column('metric', verbose_name=_("Metric"))
++    upper_threshold = tables.Column('upper_threshold', verbose_name=_("Upper threshold"))
++    lower_threshold = tables.Column('lower_threshold', verbose_name=_("Lower threshold"))
++    node_up = tables.Column('node_up', verbose_name=_("Node up"))
++    node_down = tables.Column('node_down', verbose_name=_("Node down"))
++
++    class Meta:
++        name = "scaling-rules"
++        verbose_name = _("Scaling Rules")
++        table_actions = (RuleFilterAction, AddRuleAction, DeleteRuleAction )
++        row_actions = (DeleteRuleAction, )
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/_add_rule.html b/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/_add_rule.html
+new file mode 100644
+index 0000000..9f6bd50
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/_add_rule.html
+@@ -0,0 +1,7 @@
++{% extends "horizon/common/_modal_form.html" %}
++{% load i18n %}
++
++{% block modal-body-right %}
++    <h3>{% trans "Rule" %}</h3>
++    <p>{% trans "Enter new rule... " %} </p>
++{% endblock %}
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/_auto_scaling_metric_chart.html b/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/_auto_scaling_metric_chart.html
+new file mode 100644
+index 0000000..1e143a5
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/_auto_scaling_metric_chart.html
+@@ -0,0 +1,7 @@
++<div class="row">
++	<div class="col-md-12">
++		<div id="auto-scaling-metric-chart" style="border: 2px; background: #CCC; text-align:center; padding: 100px; margin: 10px;">
++			Chart here
++		</div>
++	</div>
++</div>
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/_create_container.html b/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/_create_container.html
+new file mode 100644
+index 0000000..cf948ec
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/_create_container.html
+@@ -0,0 +1,7 @@
++{% extends "horizon/common/_modal_form.html" %}
++{% load i18n %}
++
++{% block modal-body-right %}
++    <h3>{% trans "Docker image" %}</h3>
++    <p>{% trans "Create a Docker container. See docker image in " %} <a href="http://hub.docker.com">http://hub.docker.com</a></p>
++{% endblock %}
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/_detail_log.html b/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/_detail_log.html
+new file mode 100644
+index 0000000..7bae402
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/_detail_log.html
+@@ -0,0 +1,8 @@
++{% load i18n %}
++
++<div class="clearfix">
++  <h3 class="pull-left">{% trans "Instance Console Log" %}</h3>
++
++</div>
++
++<pre class="logs">{{ console_log }}</pre>
+diff --git a/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/_detail_overview.html b/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/_detail_overview.html
+new file mode 100644
+index 0000000..69213e2
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/_detail_overview.html
+@@ -0,0 +1,5 @@
++{% load i18n sizeformat %}
++
++<div class="detail">
++  <h1>Some overview</h1>
++</div>
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/add_rule.html b/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/add_rule.html
+new file mode 100644
+index 0000000..11fd171
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/add_rule.html
+@@ -0,0 +1,11 @@
++{% extends 'base.html' %}
++{% load i18n %}
++{% block title %}{% trans "Add new rule" %}{% endblock %}
++
++{% block page_header %}
++  {% include "horizon/common/_page_header.html" with title=_("Add new rule") %}
++{% endblock page_header %}
++
++{% block main %}
++    {% include 'container/autoscaling/_add_rule.html' %}
++{% endblock %}
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/create_container.html b/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/create_container.html
+new file mode 100644
+index 0000000..658377b
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/create_container.html
+@@ -0,0 +1,11 @@
++{% extends 'base.html' %}
++{% load i18n %}
++{% block title %}{% trans "Create Container" %}{% endblock %}
++
++{% block page_header %}
++  {% include "horizon/common/_page_header.html" with title=_("Create a Container") %}
++{% endblock page_header %}
++
++{% block main %}
++    {% include 'docker/autoscaling/_create_container.html' %}
++{% endblock %}
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/detail.html b/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/detail.html
+new file mode 100644
+index 0000000..272cb68
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/detail.html
+@@ -0,0 +1,21 @@
++{% extends 'base.html' %}
++{% load i18n %}
++{% load breadcrumb_nav %}
++
++{% block title %}
++  {{ page_title }}
++{% endblock %}
++
++{% block page_header %}
++  <div class='page-header'>
++    {% breadcrumb_nav %}
++  </div>
++{% endblock %}
++
++{% block main %}
++  <div class="row">
++    <div class="col-sm-12">
++      {{ tab_group.render }}
++    </div>
++  </div>
++{% endblock %}
+diff --git a/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/index.html b/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/index.html
+new file mode 100644
+index 0000000..520c298
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/autoscaling/templates/autoscaling/index.html
+@@ -0,0 +1,31 @@
++{% extends 'base.html' %}
++{% load i18n %}
++{% block title %}{% trans "Docker Manager" %}{% endblock %}
++
++{% block page_header %}
++    {% include "horizon/common/_page_header.html" with title=_("Auto Scaling") %}
++{% endblock page_header %}
++
++{% block main %}
++	<h1>Usage</h1>
++	<div class="row">
++		<div class="col-md-2">
++				<form method="GET" action="">
++					<div class="input-group">
++						<select class="form-control" name="vm">
++						{% for vm in vm_list %}
++							<option value="{{vm.id}}" {% if vm.id == current_vm %}selected="selected"{% endif %}>{{vm.name}}</option>
++						{% endfor %}
++						</select>
++						<div class="input-group-btn">
++							<button class="btn btn-default">{% trans "Filter" %}</button>
++						</div>
++					</div>
++				</form>
++		</div>
++	</div>
++
++	 {% include "container/autoscaling/_auto_scaling_metric_chart.html" %}
++
++    {{ table.render }}
++{% endblock %}
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/docker/autoscaling/urls.py b/openstack_dashboard/dashboards/docker/autoscaling/urls.py
+new file mode 100644
+index 0000000..0caea0b
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/autoscaling/urls.py
+@@ -0,0 +1,12 @@
++from django.conf.urls import patterns
++from django.conf.urls import url
++
++from openstack_dashboard.dashboards.docker.autoscaling import views
++
++
++urlpatterns = patterns(
++    '',
++    url(r'^$', views.IndexView.as_view(), name='index'),
++    url(r'^add_rule/$', views.AddRuleView.as_view(), name='add_rule'),
++    url(r'^(?P<rule_id>[^/]+)delete_rule/$', views.DeleteRuleView.as_view(), name='delete_rule'),
++)
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/docker/autoscaling/views.py b/openstack_dashboard/dashboards/docker/autoscaling/views.py
+new file mode 100644
+index 0000000..d278c73
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/autoscaling/views.py
+@@ -0,0 +1,72 @@
++from horizon import views
++from openstack_dashboard.dashboards.docker.autoscaling import forms as project_forms
++from openstack_dashboard.dashboards.docker.autoscaling import tables as project_tables
++from openstack_dashboard.dashboards.docker.autoscaling import models as project_models
++
++from django.core.urlresolvers import reverse
++from django.core.urlresolvers import reverse_lazy
++from django.utils.translation import ugettext_lazy as _
++
++from horizon import tabs
++from horizon import exceptions
++from horizon import forms
++from horizon import tables
++
++from horizon.utils import memoized
++
++from openstack_dashboard import api
++
++class IndexView(tables.DataTableView):
++    # A very simple class-based view...
++    table_class = project_tables.ScalingRuleTable
++    template_name = 'container/autoscaling/index.html'
++
++    def get_data(self):
++        list_instances = []
++
++        list_instances.append(project_models.ScalingRuleItem(metric='CPU', upper_threshold='90', lower_threshold='30', node_up=2, node_down=1))
++        list_instances.append(project_models.ScalingRuleItem(metric='Mem', upper_threshold='85', lower_threshold='25', node_up=3, node_down=2))
++
++        # Add data to the context here...
++        return list_instances
++
++    def get_context_data(self, **kwargs):
++        context = super(IndexView, self).get_context_data(**kwargs)
++        # if hasattr(self, "table"):
++        #     context[self.context_object_name] = self.table
++
++        search_opts = {'paginate': False}
++        try:
++            instances, self._more = api.nova.server_list(
++                self.request,
++                search_opts=search_opts)
++        except Exception:
++            self._more = False
++            instances = []
++            exceptions.handle(self.request,
++                              _('Unable to retrieve instances.'))
++        context['vm_list'] = []
++        if instances:
++            for instance in instances:
++                context['vm_list'].append({'id': instance.key_name, 'name': instance.name})
++
++        # context['vm_list'] = ( 'vm-olp1', 'vm-olp2', 'vm-olp3' )
++        context['current_vm'] = self.request.GET.get('vm', None)
++        if not context['current_vm']:
++            context['current_vm'] = context['vm_list'][0] \
++                if len(context['vm_list']) > 0 else False
++
++
++        return context
++
++class AddRuleView(forms.ModalFormView):
++    form_class = project_forms.AddRuleForm
++    template_name = 'container/autoscaling/add_rule.html'
++    modal_id = "add_rule_modal"
++    modal_header = _("Add rule")
++    submit_label = _("Add rule")    
++    success_url = reverse_lazy('horizon:container:autoscaling:index')
++    submit_url = reverse_lazy("horizon:container:autoscaling:add_rule")
++
++class DeleteRuleView(forms.ModalFormView):
++    pass
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/docker/dashboard.py b/openstack_dashboard/dashboards/docker/dashboard.py
+new file mode 100644
+index 0000000..5deb93a
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/dashboard.py
+@@ -0,0 +1,20 @@
++from django.utils.translation import ugettext_lazy as _
++
++import horizon
++
++
++class DockerDashboardGroup(horizon.PanelGroup):
++	slug = "autoscaling-group"
++	name = _("Auto Scaling Group")
++	panels = ('autoscaling', 'monitor',)
++
++class ContainerDashboard(horizon.Dashboard):
++	name = _("Container")
++	slug = "container"
++	panels = (DockerDashboardGroup,)
++	default_panel = 'autoscaling'
++
++	def can_access(self, context):
++		return True
++
++horizon.register(ContainerDashboard)
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/docker/monitor/__init__.py b/openstack_dashboard/dashboards/docker/monitor/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/openstack_dashboard/dashboards/docker/monitor/panel.py b/openstack_dashboard/dashboards/docker/monitor/panel.py
+new file mode 100644
+index 0000000..6cc02cf
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/monitor/panel.py
+@@ -0,0 +1,11 @@
++from django.utils.translation import ugettext_lazy as _
++import horizon
++from openstack_dashboard.dashboards.docker import dashboard
++
++
++class DockerMonitorPanel(horizon.Panel):
++    name = _("Monitor")
++    slug = "monitor"
++
++
++dashboard.ContainerDashboard.register(DockerMonitorPanel)
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/docker/monitor/templates/monitor/index.html b/openstack_dashboard/dashboards/docker/monitor/templates/monitor/index.html
+new file mode 100644
+index 0000000..c1d66f6
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/monitor/templates/monitor/index.html
+@@ -0,0 +1,11 @@
++{% extends 'base.html' %}
++{% load i18n %}
++{% block title %}{% trans "Docker Monitor" %}{% endblock %}
++
++{% block page_header %}
++    {% include "horizon/common/_page_header.html" with title=_("Docker Monitor") %}
++{% endblock page_header %}
++
++{% block main %}
++	<iframe src="http://104.154.129.191:8088" width="100%" height="600" border=0></iframe>
++{% endblock %}
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/docker/monitor/urls.py b/openstack_dashboard/dashboards/docker/monitor/urls.py
+new file mode 100644
+index 0000000..dc7aaad
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/monitor/urls.py
+@@ -0,0 +1,10 @@
++from django.conf.urls import patterns
++from django.conf.urls import url
++
++from openstack_dashboard.dashboards.docker.monitor.views import IndexView
++
++
++urlpatterns = patterns(
++    '',
++    url(r'^$', IndexView.as_view(), name='index'),
++)
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/docker/monitor/views.py b/openstack_dashboard/dashboards/docker/monitor/views.py
+new file mode 100644
+index 0000000..5c8ab69
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/monitor/views.py
+@@ -0,0 +1,10 @@
++from horizon import views
++
++
++class IndexView(views.APIView):
++    # A very simple class-based view...
++    template_name = 'docker/monitor/index.html'
++
++    def get_data(self, request, context, *args, **kwargs):
++        # Add data to the context here...
++        return context
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/docker/move_me_to_enabled_folder/_50_docker.py b/openstack_dashboard/dashboards/docker/move_me_to_enabled_folder/_50_docker.py
+new file mode 100644
+index 0000000..22666d9
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/move_me_to_enabled_folder/_50_docker.py
+@@ -0,0 +1,12 @@
++# The name of the dashboard to be added to HORIZON['dashboards']. Required.
++DASHBOARD = 'container'
++
++# If set to True, this dashboard will not be added to the settings.
++DISABLED = False
++
++# A list of applications to be added to INSTALLED_APPS.
++ADD_INSTALLED_APPS = [
++    'openstack_dashboard.dashboards.docker',
++]
++
++FEATURE = True
+diff --git a/openstack_dashboard/dashboards/docker/requirement.txt b/openstack_dashboard/dashboards/docker/requirement.txt
+new file mode 100644
+index 0000000..d2cbb1a
+--- /dev/null
++++ b/openstack_dashboard/dashboards/docker/requirement.txt
+@@ -0,0 +1 @@
++docker-py
+diff --git a/openstack_dashboard/enabled/_50_docker.py b/openstack_dashboard/enabled/_50_docker.py
+new file mode 100644
+index 0000000..22666d9
+--- /dev/null
++++ b/openstack_dashboard/enabled/_50_docker.py
+@@ -0,0 +1,12 @@
++# The name of the dashboard to be added to HORIZON['dashboards']. Required.
++DASHBOARD = 'container'
++
++# If set to True, this dashboard will not be added to the settings.
++DISABLED = False
++
++# A list of applications to be added to INSTALLED_APPS.
++ADD_INSTALLED_APPS = [
++    'openstack_dashboard.dashboards.docker',
++]
++
++FEATURE = True
