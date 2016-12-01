@@ -1,0 +1,808 @@
+diff --git a/UTT-IT.diff b/UTT-IT.diff
+new file mode 100644
+index 0000000..e69de29
+diff --git a/a.patch b/a.patch
+new file mode 100644
+index 0000000..e69de29
+diff --git a/openstack_dashboard/dashboards/container/__init__.py b/openstack_dashboard/dashboards/container/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/__init__.py b/openstack_dashboard/dashboards/container/autoscaling/__init__.py
+new file mode 100644
+index 0000000..e69de29
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/forms.py b/openstack_dashboard/dashboards/container/autoscaling/forms.py
+new file mode 100644
+index 0000000..5387a39
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/forms.py
+@@ -0,0 +1,43 @@
++# Copyright 2013 Hewlett-Packard Development Company, L.P.
++#
++#    Licensed under the Apache License, Version 2.0 (the "License"); you may
++#    not use this file except in compliance with the License. You may obtain
++#    a copy of the License at
++#
++#         http://www.apache.org/licenses/LICENSE-2.0
++#
++#    Unless required by applicable law or agreed to in writing, software
++#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++#    License for the specific language governing permissions and limitations
++#    under the License.
++
++import urllib, json
++
++from django.utils.translation import ugettext_lazy as _
++
++from horizon import exceptions
++from horizon import workflows, forms
++from horizon import messages
++
++from openstack_dashboard import api
++
++
++class CreateRuleForm(forms.SelfHandlingForm):
++    metric = forms.ChoiceField(label=_("Metric"), choices=[('cpu', _("CPU")), ('memory', _("Memory"))])
++    upper = forms.IntegerField(label=_("Upper threshold"), min_value=0)
++    lower = forms.IntegerField(label=_("Lower threshold"), min_value=0)
++    up = forms.IntegerField(label=_("Number of node will be added when scale out"), min_value=0)
++    down = forms.IntegerField(label=_("Number of node will be deleted when scale in"), min_value=0)
++
++    def handle(self, request, data):
++        try:
++            metric = data.get('metric')
++            upper = data.get('upper')
++            lower = data.get('lower')
++            up = data.get('up')
++            down = data.get('down')
++            obj = {'metric': metric, 'upper': upper, 'lower': lower, 'up': upper, 'down': down}
++            messages.success(request, _("Rule created successfully."))
++        except Exception:
++            exceptions.handle(request, _('Unable to create rule.'))
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/panel.py b/openstack_dashboard/dashboards/container/autoscaling/panel.py
+new file mode 100644
+index 0000000..7ed0ee4
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/panel.py
+@@ -0,0 +1,23 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++
++from django.utils.translation import ugettext_lazy as _
++
++import horizon
++from openstack_dashboard.dashboards.container import dashboard
++
++class Autoscaling(horizon.Panel):
++    name = _("Auto Scaling")
++    slug = "autoscaling"
++
++
++dashboard.Container.register(Autoscaling)
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/tables.py b/openstack_dashboard/dashboards/container/autoscaling/tables.py
+new file mode 100644
+index 0000000..eff25cb
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/tables.py
+@@ -0,0 +1,71 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++
++from django.utils.translation import ungettext_lazy
++from django.utils.translation import ugettext_lazy as _
++
++from horizon import tables
++
++
++class MonitorFilterAction(tables.FilterAction):
++    name = "monitorfitler"
++
++class Container:
++
++    def __init__(self, container_id, metric, upper, lower, up, down):
++        self.id = container_id
++        self.metric = metric
++        self.upper = upper
++        self.lower = lower
++        self.up = up
++        self.down = down
++
++class AddRule(tables.LinkAction):
++    name = "add"
++    verbose_name = _("Add Rule")
++    url = "horizon:container:autoscaling:create"
++    classes = ("ajax-modal",)
++    icon = "cloud-upload"
++
++class DeleteRule(tables.DeleteAction):
++    name = "delete"
++    verbose_name = _("Delete")
++    classes = ("btn-danger",)
++    icon = "trash"
++
++    @staticmethod
++    def action_present(count):
++        return ungettext_lazy(
++            u"Delete Rule",
++            u"Delete Rules",
++            count
++        )
++
++    @staticmethod
++    def action_past(count):
++        return ungettext_lazy(
++            u"Deleted Rule",
++            u"Deleted Rules",
++            count
++        )
++
++class ContainerTable(tables.DataTable):
++    metric = tables.Column("metric", verbose_name=_("Metric"))
++    upper = tables.Column("upper", verbose_name=_("Upper threshold"))
++    lower = tables.Column("lower", verbose_name=_("Lower threshold"))
++    up = tables.Column("up", verbose_name=_("Node Up"))
++    down = tables.Column("down", verbose_name=_("Node Down"))
++
++    class Meta:
++        name = "container_table"
++        verbose_name = _("Container Table")
++        table_actions = (AddRule, DeleteRule, )
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/_create.html b/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/_create.html
+new file mode 100644
+index 0000000..0c57adb
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/_create.html
+@@ -0,0 +1,7 @@
++{% extends "horizon/common/_modal_form.html" %}
++{% load i18n %}
++
++{% block modal-body-right %}
++  <h3>{% trans "Description:" %}</h3>
++  <p>{% trans "Add new auto-scaling rule with specfield paramaters." %}</p>
++{% endblock %}
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/create.html b/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/create.html
+new file mode 100644
+index 0000000..73c29d1
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/create.html
+@@ -0,0 +1,7 @@
++{% extends 'base.html' %}
++{% load i18n %}
++{% block title %}{% trans "Create Rule" %}{% endblock %}
++
++{% block main %}
++    {% include 'container/autoscaling/_create.html' %}
++{% endblock %}
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/index.html b/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/index.html
+new file mode 100644
+index 0000000..bbe7e75
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/templates/autoscaling/index.html
+@@ -0,0 +1,359 @@
++{% extends 'base.html' %}
++{% load i18n %}
++{% block title %}{% trans "Auto Scaling" %}{% endblock %}
++
++{% block page_header %}
++  {% include "horizon/common/_page_header.html" with title=_("Auto Scaling") %}
++{% endblock page_header %}
++
++{% block main %}
++	<div class="quota-dynamic"><h3 class="quota-heading">Usage</h3></div>
++	<div class="usage_info_wrapper">
++	    <form action="?" method="get" id="date_form" class="form-inline ng-pristine ng-valid">
++            <div class="form-group">
++              	<label class="control-label" for="selectbasic">VM&nbsp;&nbsp;</label>
++                <select id="project" name="project_choose" class="form-control">
++                    <option>swarm-olp</option>
++                </select>
++            </div>
++            <button class="btn btn-default"><i class="fa fa-search"></i> Filter</button>
++        </form>
++	</div>
++<script src="//d3js.org/d3.v3.min.js"></script>
++  <style>
++    
++    .axis path,
++    .axis line {
++      fill: none;
++      stroke: #000;
++      shape-rendering: crispEdges;
++    }
++    
++    .x.axis path {
++      display: none;
++    }
++    
++    .line {
++      fill: none;
++      stroke: steelblue;
++      stroke-width: 1.5px;
++    }
++  </style>
++<div class="" id="uttchart" style="width:100%"></div>
++  <script>
++  $(document).ready(function () {
++  	// body...
++    var myData = "date	CPU	Mem\n\
++20111001	63.4	62.7	\n\
++20111002	58.0	59.9	\n\
++20111003	53.3	59.1	\n\
++20111004	55.7	58.8	\n\
++20111005	64.2	58.7	\n\
++20111006	58.8	57.0	\n\
++20111007	57.9	56.7	\n\
++20111008	61.8	56.8	\n\
++20111009	69.3	56.7	\n\
++20111010	71.2	60.1	\n\
++20111011	68.7	61.1	\n\
++20111012	61.8	61.5	\n\
++20111013	63.0	64.3	\n\
++20111014	66.9	67.1	\n\
++20111015	61.7	64.6	\n\
++20111016	61.8	61.6	\n\
++20111017	62.8	61.1	\n\
++20111018	60.8	59.2	\n\
++20111019	62.1	58.9	\n\
++20111020	65.1	57.2	\n\
++20111021	55.6	56.4	\n\
++20111022	54.4	60.7	\n";
++
++    var margin = {
++        top: 20,
++        right: 80,
++        bottom: 30,
++        left: 50
++      },
++      width = $("#uttchart").width() - 300,
++      height = 500 - margin.top - margin.bottom;
++
++    var parseDate = d3.time.format("%Y%m%d").parse;
++
++    var x = d3.time.scale()
++      .range([0, width]);
++
++    var y = d3.scale.linear()
++      .range([height, 0]);
++
++    var color = d3.scale.category10();
++
++    var xAxis = d3.svg.axis()
++      .scale(x)
++      .orient("bottom");
++	formatter = d3.format(".%");
++
++
++    var yAxis = d3.svg.axis()
++      .scale(y)
++      .orient("left").tickFormat(formatter);
++
++    var line = d3.svg.line()
++      .interpolate("basis")
++      .x(function(d) {
++        return x(d.date);
++      })
++      .y(function(d) {
++        return y(d.temperature);
++      });
++
++    var svg = d3.select("#uttchart").append("svg")
++      .attr("width", width + margin.left + margin.right)
++      .attr("height", height + margin.top + margin.bottom)
++      .append("g")
++      .attr("transform", "translate(" + margin.left + "," + margin.top + ")");
++
++    var data = d3.tsv.parse(myData);
++
++    color.domain(d3.keys(data[0]).filter(function(key) {
++      return key !== "date";
++    }));
++
++    data.forEach(function(d) {
++      d.date = parseDate(d.date);
++    });
++
++    var cities = color.domain().map(function(name) {
++      return {
++        name: name,
++        values: data.map(function(d) {
++          return {
++            date: d.date,
++            temperature: +d[name]
++          };
++        })
++      };
++    });
++
++    x.domain(d3.extent(data, function(d) {
++      return d.date;
++    }));
++
++    y.domain([
++      d3.min(cities, function(c) {
++        return d3.min(c.values, function(v) {
++          return v.temperature;
++        });
++      }),
++      d3.max(cities, function(c) {
++        return d3.max(c.values, function(v) {
++          return v.temperature;
++        });
++      })
++    ]);
++
++    var legend = svg.selectAll('g')
++      .data(cities)
++      .enter()
++      .append('g')
++      .attr('class', 'legend');
++
++    legend.append('text')
++      .attr('x', width - 20 + 70)
++      .attr('y', function(d, i) {
++        return (i * 20) + 15;
++      })
++      .text(function(d) {
++        return d.name;
++      });
++
++	var display_line = function(i, opac){
++		var city = $(".city");
++		if(i == 0){
++			city.first().css("opacity", opac);
++		}else{
++			city.last().css("opacity", opac);
++		}
++	}
++
++  legend.append("foreignObject")
++	.attr("width", 20)
++	.attr("height", 20)
++  .attr('x', width - 70 + 100)
++      .attr('y', function(d, i) {
++        return (i * 20);
++      })
++	.append("xhtml:body")
++	.html("<input type='checkbox' class='cbxUtt'/>")
++	.on("click", function(d, i){
++		opac = 1;
++		var cbxUtt = $(".cbxUtt");
++		if(i == 0){
++			if(!cbxUtt.first().is(":checked")){
++				opac = 0;
++			}
++		}else{
++			if(!cbxUtt.last().is(":checked")){
++				opac = 0;
++			}
++		}
++		display_line(i, opac);
++	});
++
++
++    legend.append('rect')
++      .attr('x', width + 22 + 70)
++      .attr('y', function(d, i) {
++        return i * 20 + 5;
++      })
++      .attr('width', 10)
++      .attr('height', 10)
++      .style('fill', function(d) {
++        return color(d.name);
++      });
++
++
++    svg.append("g")
++      .attr("class", "x axis")
++      .attr("transform", "translate(0," + height + ")")
++      .call(xAxis);
++
++    svg.append("g")
++      .attr("class", "y axis")
++      .call(yAxis)
++      .append("text")
++      .attr("transform", "rotate(270)")
++      .attr("y", 6)
++      .attr("dy", ".71em")
++      .style("text-anchor", "end")
++      .text("%");
++
++    var city = svg.selectAll(".city")
++      .data(cities)
++      .enter().append("g")
++      .attr("class", "city");
++
++    city.append("path")
++      .attr("class", "line")
++      .attr("d", function(d) {
++        return line(d.values);
++      })
++      .style("stroke", function(d) {
++        return color(d.name);
++      });
++
++    city.append("text")
++      .datum(function(d) {
++      	
++        return {
++          name: d.name,
++          value: d.values[d.values.length - 1]
++        };
++      })
++      .attr("transform", function(d) {
++        return "translate(" + x(d.value.date) + "," + y(d.value.temperature) + ")";
++      })
++      .attr("x", 3)
++      .attr("dy", ".35em")
++      .text(function(d) {
++        return d.name;
++      });
++
++    var mouseG = svg.append("g")
++      .attr("class", "mouse-over-effects");
++
++    mouseG.append("path") // this is the black vertical line to follow mouse
++      .attr("class", "mouse-line")
++      .style("stroke", "black")
++      .style("stroke-width", "1px")
++      .style("opacity", "0");
++      
++    var lines = document.getElementsByClassName('line');
++
++    var mousePerLine = mouseG.selectAll('.mouse-per-line')
++      .data(cities)
++      .enter()
++      .append("g")
++      .attr("class", "mouse-per-line");
++
++    mousePerLine.append("circle")
++      .attr("r", 7)
++      .style("stroke", function(d) {
++        return color(d.name);
++      })
++      .style("fill", "none")
++      .style("stroke-width", "1px")
++      .style("opacity", "0");
++
++    mousePerLine.append("text")
++      .attr("transform", "translate(10,3)");
++
++    mouseG.append('svg:rect') // append a rect to catch mouse movements on canvas
++      .attr('width', width) // can't catch mouse events on a g element
++      .attr('height', height)
++      .attr('fill', 'none')
++      .attr('pointer-events', 'all')
++      .on('mouseout', function() { // on mouse out hide line, circles and text
++        d3.select(".mouse-line")
++          .style("opacity", "0");
++        d3.selectAll(".mouse-per-line circle")
++          .style("opacity", "0");
++        d3.selectAll(".mouse-per-line text")
++          .style("opacity", "0");
++      })
++      .on('mouseover', function() { // on mouse in show line, circles and text
++        d3.select(".mouse-line")
++          .style("opacity", "1");
++        d3.selectAll(".mouse-per-line circle")
++          .style("opacity", "1");
++        d3.selectAll(".mouse-per-line text")
++          .style("opacity", "1");
++      })
++      .on('mousemove', function() { // mouse moving over canvas
++        var mouse = d3.mouse(this);
++        d3.select(".mouse-line")
++          .attr("d", function() {
++            var d = "M" + mouse[0] + "," + height;
++            d += " " + mouse[0] + "," + 0;
++            return d;
++          });
++
++        d3.selectAll(".mouse-per-line")
++          .attr("transform", function(d, i) {
++            var xDate = x.invert(mouse[0]),
++                bisect = d3.bisector(function(d) { return d.date; }).right;
++                idx = bisect(d.values, xDate);
++            
++            var beginning = 0,
++                end = lines[i].getTotalLength(),
++                target = null;
++
++            while (true){
++              target = Math.floor((beginning + end) / 2);
++              pos = lines[i].getPointAtLength(target);
++              if ((target === end || target === beginning) && pos.x !== mouse[0]) {
++                  break;
++              }
++              if (pos.x > mouse[0])      end = target;
++              else if (pos.x < mouse[0]) beginning = target;
++              else break; //position found
++            }
++            
++            d3.select(this).select('text')
++              .text(y.invert(pos.y).toFixed(2));
++              
++            return "translate(" + mouse[0] + "," + pos.y +")";
++          });
++      });
++
++    $("svg").css("overflow" , "visible");
++    $(".cbxUtt").click();
++    co = 0;
++    $.each($(".x.axis .tick.major text"), function function_name(key, val) {
++    	val.textContent = co++;
++    });
++  });
++  </script>
++	<div class="scaling_rules_table">
++		<h2>Scaling Rules</h2>
++		{{ table.render }}
++	</div>
++{% endblock %}
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/tests.py b/openstack_dashboard/dashboards/container/autoscaling/tests.py
+new file mode 100644
+index 0000000..19781d1
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/tests.py
+@@ -0,0 +1,19 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++
++from horizon.test import helpers as test
++
++
++class AutoscalingTests(test.TestCase):
++    # Unit tests for autoscaling.
++    def test_me(self):
++        self.assertTrue(1 + 1 == 2)
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/urls.py b/openstack_dashboard/dashboards/container/autoscaling/urls.py
+new file mode 100644
+index 0000000..10d80f5
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/urls.py
+@@ -0,0 +1,22 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++
++from django.conf.urls import url, patterns
++
++from openstack_dashboard.dashboards.container.autoscaling import views
++
++
++urlpatterns = patterns(
++	'openstack_dashboard.dashboards.container.autoscaling.views',
++    url(r'^$', views.IndexView.as_view(), name='index'),
++    url(r'^create/$', views.CreateView.as_view(), name='create')
++)
+diff --git a/openstack_dashboard/dashboards/container/autoscaling/views.py b/openstack_dashboard/dashboards/container/autoscaling/views.py
+new file mode 100644
+index 0000000..cd0ab71
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/autoscaling/views.py
+@@ -0,0 +1,46 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++
++import urllib, json
++
++from django.core.urlresolvers import reverse_lazy
++from django.utils.translation import ugettext_lazy as _
++
++from horizon import views, tables, forms, messages
++from .tables import ContainerTable
++from openstack_dashboard.dashboards.container.autoscaling \
++    import forms as project_forms
++from openstack_dashboard.dashboards.container.autoscaling \
++    import tables as project_tables
++
++
++class IndexView(tables.DataTableView):
++    table_class = ContainerTable
++    template_name = 'container/autoscaling/index.html'
++
++    def get_data(self):
++        strobj = '[{"id": 1, "metric": "CPU", "upper": 90, "lower": 30, "up": 2, "down": 2}, {"id": 2, "metric": "Memory", "upper": 89, "lower": 22, "up": 4, "down": 3}]'
++        container = json.loads(strobj)
++        data = []
++        for row in container:
++            data.append(project_tables.Container(row['id'], row['metric'], row['upper'], row['lower'], row['up'], row['down']))
++        return data
++
++class CreateView(forms.ModalFormView):
++    template_name = 'container/autoscaling/create.html'
++    modal_header = _("Create Rule")
++    form_id = "create_rule_form"
++    form_class = project_forms.CreateRuleForm
++    submit_label = _("Create Rule")
++    submit_url = reverse_lazy("horizon:container:autoscaling:create")
++    success_url = reverse_lazy('horizon:container:autoscaling:index')
++    page_title = _("Create Rule")
+diff --git a/openstack_dashboard/dashboards/container/dashboard.py b/openstack_dashboard/dashboards/container/dashboard.py
+new file mode 100644
+index 0000000..d612f2b
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/dashboard.py
+@@ -0,0 +1,25 @@
++# Licensed under the Apache License, Version 2.0 (the "License"); you may
++# not use this file except in compliance with the License. You may obtain
++# a copy of the License at
++#
++#      http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
++# WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
++# License for the specific language governing permissions and limitations
++# under the License.
++
++from django.utils.translation import ugettext_lazy as _
++
++import horizon
++
++
++class Container(horizon.Dashboard):
++    name = _("Container")
++    slug = "container"
++    panels = ('autoscaling',)  # Add your panels here.
++    default_panel = 'autoscaling'  # Specify the slug of the dashboard's default panel.
++
++
++horizon.register(Container)
+diff --git a/openstack_dashboard/dashboards/container/static/container/js/container.js b/openstack_dashboard/dashboards/container/static/container/js/container.js
+new file mode 100644
+index 0000000..b6b70ad
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/static/container/js/container.js
+@@ -0,0 +1 @@
++/* Additional JavaScript for container. */
+diff --git a/openstack_dashboard/dashboards/container/static/container/scss/container.scss b/openstack_dashboard/dashboards/container/static/container/scss/container.scss
+new file mode 100644
+index 0000000..431771b
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/static/container/scss/container.scss
+@@ -0,0 +1 @@
++/* Additional SCSS for {{ dash_name }}. */
+diff --git a/openstack_dashboard/dashboards/container/static/dashboard/container/data2b.csv b/openstack_dashboard/dashboards/container/static/dashboard/container/data2b.csv
+new file mode 100644
+index 0000000..54664c4
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/static/dashboard/container/data2b.csv
+@@ -0,0 +1,27 @@
++date,close,open
++1-May-12,68.13,34.12
++30-Apr-12,63.98,45.56
++27-Apr-12,67.00,67.89
++26-Apr-12,89.70,78.54
++25-Apr-12,99.00,89.23
++24-Apr-12,130.28,99.23
++23-Apr-12,166.70,101.34
++20-Apr-12,234.98,122.34
++19-Apr-12,345.44,134.56
++18-Apr-12,443.34,160.45
++17-Apr-12,543.70,180.34
++16-Apr-12,580.13,210.23
++13-Apr-12,605.23,223.45
++12-Apr-12,622.77,201.56
++11-Apr-12,626.20,212.67
++10-Apr-12,628.44,310.45
++9-Apr-12,636.23,350.45
++5-Apr-12,633.68,410.23
++4-Apr-12,624.31,430.56
++3-Apr-12,629.32,460.34
++2-Apr-12,618.63,510.34
++30-Mar-12,599.55,534.23
++29-Mar-12,609.86,578.23
++28-Mar-12,617.62,590.12
++27-Mar-12,614.48,560.34
++26-Mar-12,606.98,580.12
+\ No newline at end of file
+diff --git a/openstack_dashboard/dashboards/container/templates/container/base.html b/openstack_dashboard/dashboards/container/templates/container/base.html
+new file mode 100644
+index 0000000..80677b2
+--- /dev/null
++++ b/openstack_dashboard/dashboards/container/templates/container/base.html
+@@ -0,0 +1,11 @@
++{% extends 'base.html' %}
++
++{% block sidebar %}
++  {% include 'horizon/common/_sidebar.html' %}
++{% endblock %}
++
++{% block main %}
++    {% include "horizon/_messages.html" %}
++    {% block container_main %}{% endblock %}
++{% endblock %}
++
+diff --git a/openstack_dashboard/enabled/_50_container.py b/openstack_dashboard/enabled/_50_container.py
+new file mode 100644
+index 0000000..36ea20a
+--- /dev/null
++++ b/openstack_dashboard/enabled/_50_container.py
+@@ -0,0 +1,24 @@
++# Copyright 2015, Hewlett-Packard Development Company, L.P.
++#
++# Licensed under the Apache License, Version 2.0 (the "License");
++# you may not use this file except in compliance with the License.
++# You may obtain a copy of the License at
++#
++#    http://www.apache.org/licenses/LICENSE-2.0
++#
++# Unless required by applicable law or agreed to in writing, software
++# distributed under the License is distributed on an "AS IS" BASIS,
++# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
++# See the License for the specific language governing permissions and
++# limitations under the License.
++
++# The slug of the dashboard to be added to HORIZON['dashboards']. Required.
++DASHBOARD = 'container'
++
++# If set to True, this dashboard will not be added to the settings.
++DISABLED = False
++
++# A list of applications to be added to INSTALLED_APPS.
++ADD_INSTALLED_APPS = [
++    'openstack_dashboard.dashboards.container',
++]
+diff --git a/rule_storage.json b/rule_storage.json
+new file mode 100644
+index 0000000..33f2d17
+--- /dev/null
++++ b/rule_storage.json
+@@ -0,0 +1,7 @@
++{
++    "down": 1, 
++    "upper": 1, 
++    "metric": "cpu", 
++    "lower": 1, 
++    "up": 1
++}
+\ No newline at end of file
+diff --git a/utt.patch b/utt.patch
+new file mode 100644
+index 0000000..e69de29
