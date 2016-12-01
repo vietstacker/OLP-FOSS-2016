@@ -1,0 +1,170 @@
+Index: openstack_dashboard/dashboards/container/scaling/tables.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- openstack_dashboard/dashboards/container/scaling/tables.py	(revision )
++++ openstack_dashboard/dashboards/container/scaling/tables.py	(revision )
+@@ -0,0 +1,49 @@
++from django.utils.translation import ugettext_lazy as _
++
++from horizon import tables
++
++
++class MyFilterAction(tables.FilterAction):
++    name = "myfilter"
++    filter_type = "server"
++    filter_choices = (('name', _("OLP_VM"), True),)
++
++
++
++class InstancesTable(tables.DataTable):
++    abname = tables.Column('abname', \
++                         verbose_name=_(" "))
++    name = tables.Column('name', \
++                         verbose_name=_("Metric"))
++    status = tables.Column('status', \
++                           verbose_name=_("Upper threshold"))
++    zone = tables.Column('availability_zone', \
++                         verbose_name=_("Lower threshold"))
++    image_name = tables.Column('image_name', \
++                               verbose_name=_("Node up"))
++    node_name = tables.Column('node_name', \
++                               verbose_name=_("Node down"))
++
++    class Meta:
++        name = "instances"
++        verbose_name = _("Instances")
++        table_actions = (MyFilterAction,)
++
++class UsageTable(tables.DataTable):
++    abname = tables.Column('abname', \
++                         verbose_name=_(" "))
++    name = tables.Column('name', \
++                         verbose_name=_("Metric"))
++    status = tables.Column('status', \
++                           verbose_name=_("Upper threshold"))
++    zone = tables.Column('availability_zone', \
++                         verbose_name=_("Lower threshold"))
++    image_name = tables.Column('image_name', \
++                               verbose_name=_("Node up"))
++    node_name = tables.Column('node_name', \
++                               verbose_name=_("Node down"))
++
++    class Meta:
++        name = "usage"
++        verbose_name = _("Usage")
++        table_actions = (MyFilterAction,)
+\ No newline at end of file
+Index: openstack_dashboard/settings.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- openstack_dashboard/settings.py	(revision d6e716334c3d50b45f44302085eba476d33ed13e)
++++ openstack_dashboard/settings.py	(revision )
+@@ -74,7 +74,7 @@
+     'js_files': [],
+     'js_spec_files': [],
+     'external_templates': [],
+-    'plugins': []
++    'plugins': [],
+ }
+ 
+ # Set to True to allow users to upload images to glance via Horizon server.
+Index: openstack_dashboard/enabled/_50_mydashboard.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- openstack_dashboard/enabled/_50_mydashboard.py	(revision )
++++ openstack_dashboard/enabled/_50_mydashboard.py	(revision )
+@@ -0,0 +1,10 @@
++# The name of the dashboard to be added to HORIZON['dashboards']. Required.
++DASHBOARD = 'container'
++
++# If set to True, this dashboard will not be added to the settings.
++DISABLED = False
++
++# A list of applications to be added to INSTALLED_APPS.
++ADD_INSTALLED_APPS = [
++    'openstack_dashboard.dashboards.container',
++]
+\ No newline at end of file
+Index: openstack_dashboard/dashboards/admin/dashboard.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- openstack_dashboard/dashboards/admin/dashboard.py	(revision d6e716334c3d50b45f44302085eba476d33ed13e)
++++ openstack_dashboard/dashboards/admin/dashboard.py	(revision )
+@@ -32,6 +32,4 @@
+                         ('telemetry', 'context_is_admin'),)
+     else:
+         permissions = ('openstack.roles.admin',)
+-
+-
+ horizon.register(Admin)
+Index: openstack_dashboard/dashboards/identity/dashboard.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- openstack_dashboard/dashboards/identity/dashboard.py	(revision d6e716334c3d50b45f44302085eba476d33ed13e)
++++ openstack_dashboard/dashboards/identity/dashboard.py	(revision )
+@@ -24,4 +24,4 @@
+     default_panel = 'projects'
+ 
+ 
+-horizon.register(Identity)
++horizon.register(Identity)
+\ No newline at end of file
+Index: openstack_dashboard/dashboards/container/scaling/tabs.py
+IDEA additional info:
+Subsystem: com.intellij.openapi.diff.impl.patch.CharsetEP
+<+>UTF-8
+===================================================================
+--- openstack_dashboard/dashboards/container/scaling/tabs.py	(revision )
++++ openstack_dashboard/dashboards/container/scaling/tabs.py	(revision )
+@@ -0,0 +1,40 @@
++from django.utils.translation import ugettext_lazy as _
++
++from horizon import exceptions
++from horizon import tabs
++
++from openstack_dashboard import api
++from openstack_dashboard.dashboards.container.scaling import tables
++
++
++class InstanceTab(tabs.TableTab):
++    name = _("Instances Tab")
++    slug = "instances_tab"
++    table_classes = (tables.InstancesTable,)
++    template_name = ("horizon/common/_detail_table.html")
++    preload = False
++
++    def has_more_data(self, table):
++        return self._has_more
++
++    def get_instances_data(self):
++        try:
++            marker = self.request.GET.get(
++                        tables.InstancesTable._meta.pagination_param, None)
++
++            instances, self._has_more = api.nova.server_list(
++                self.request,
++                search_opts={'marker': marker, 'paginate': True})
++
++            return instances
++        except Exception:
++            self._has_more = False
++            error_message = _('Unable to get instances')
++            exceptions.handle(self.request, error_message)
++
++            return []
++
++class MypanelTabs(tabs.TabGroup):
++    slug = "mypanel_tabs"
++    tabs = (InstanceTab,)
++    sticky = True
+\ No newline at end of file
